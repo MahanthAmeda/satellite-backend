@@ -1,0 +1,6 @@
+venv/
+dataset/
+EuroSAT/
+EuroSATallBands/
+__pycache__/
+*.pyc
