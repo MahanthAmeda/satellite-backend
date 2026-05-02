@@ -2,61 +2,47 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import cv2
-import tensorflow as tf
 import base64
 import os
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 app = Flask(__name__)
-
-# ✅ FIX CORS COMPLETELY
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ✅ Load model safely
-MODEL_PATH = "model.keras"
-
-try:
-    model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ Model loaded")
-except Exception as e:
-    print("❌ Model load error:", e)
-    model = None
-
-
-# ✅ Test route
 @app.route("/")
 def home():
-    return "🚀 Backend is running"
+    return "🚀 Backend is running (light mode)"
 
 
-# ✅ Prediction function (SAFE)
+# 🧠 Lightweight prediction (no TensorFlow)
 def predict_image(img):
-    try:
-        img = cv2.resize(img, (128, 128))
-        img = np.array(img, dtype=np.float32)
-        img = np.expand_dims(img, axis=0)
-        img = preprocess_input(img)
+    # Resize to reduce processing
+    img = cv2.resize(img, (128, 128))
 
-        prediction = model.predict(img, verbose=0)[0]
+    # Convert to float
+    img = img.astype(np.float32)
 
-        return {
-            "urban": float(round(prediction[0] * 100, 2)),
-            "vegetation": float(round(prediction[1] * 100, 2)),
-            "water": float(round(prediction[2] * 100, 2)),
-        }
+    # Compute average colors
+    b_mean = np.mean(img[:, :, 0])
+    g_mean = np.mean(img[:, :, 1])
+    r_mean = np.mean(img[:, :, 2])
 
-    except Exception as e:
-        print("Prediction error:", e)
-        return {"urban": 0.0, "vegetation": 0.0, "water": 0.0}
+    total = b_mean + g_mean + r_mean + 1e-6
+
+    # Simple heuristic
+    water = b_mean / total
+    vegetation = g_mean / total
+    urban = r_mean / total
+
+    return {
+        "urban": float(round(urban * 100, 2)),
+        "vegetation": float(round(vegetation * 100, 2)),
+        "water": float(round(water * 100, 2)),
+    }
 
 
-# ✅ Analyze route (NO CRASH VERSION)
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
-        if model is None:
-            return jsonify({"error": "Model not loaded"}), 500
-
         if "image" not in request.files:
             return jsonify({"error": "No image uploaded"}), 400
 
@@ -70,7 +56,7 @@ def analyze():
 
         stats = predict_image(img)
 
-        # send original image back
+        # Return original image
         _, buffer = cv2.imencode(".jpg", img)
         encoded = base64.b64encode(buffer).decode("utf-8")
 
@@ -84,7 +70,7 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 
-# ✅ Render port fix
+# Render port
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
