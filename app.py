@@ -8,34 +8,31 @@ import os
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 app = Flask(__name__)
-CORS(app)
 
-# 🔥 Load model
+# 🔥 FIX CORS (IMPORTANT)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Load model
 MODEL_PATH = "model.keras"
 
-if not os.path.exists(MODEL_PATH):
-    print("❌ Model not found")
-    model = None
-else:
-    print("✅ Loading model...")
+try:
     model = tf.keras.models.load_model(MODEL_PATH)
     print("✅ Model loaded")
+except Exception as e:
+    print("❌ Model load error:", e)
+    model = None
 
 
-# 🟢 NEW: Root route (so no 404)
 @app.route('/')
 def home():
-    return "🚀 Satellite Analyzer Backend is Running!"
+    return "Backend running 🚀"
 
 
-# 🧠 Prediction
 def predict_image(img):
     h, w, _ = img.shape
 
     patch_size = 64
     step = 32
-
-    classes = ["urban", "vegetation", "water"]
 
     patches = []
 
@@ -73,94 +70,39 @@ def predict_image(img):
     }
 
 
-# 🎨 Segmentation
-def generate_segmentation(img):
-    h, w, _ = img.shape
-
-    patch_size = 64
-    step = 32
-
-    classes = ["urban", "vegetation", "water"]
-
-    patches = []
-    coords = []
-
-    for y in range(0, h, step):
-        for x in range(0, w, step):
-            patch = img[y:y+patch_size, x:x+patch_size]
-
-            if patch.size == 0:
-                continue
-
-            patch_resized = cv2.resize(patch, (128, 128))
-            patches.append(patch_resized)
-            coords.append((y, x))
-
-    if len(patches) == 0:
-        return img
-
-    patches = np.array(patches, dtype=np.float32)
-    patches = preprocess_input(patches)
-
-    predictions = model.predict(patches, verbose=0)
-
-    overlay = img.copy()
-
-    for i, pred in enumerate(predictions):
-        y, x = coords[i]
-        label = classes[int(np.argmax(pred))]
-
-        if label == "water":
-            color = (255, 0, 0)
-        elif label == "vegetation":
-            color = (0, 255, 0)
-        else:
-            color = (0, 0, 255)
-
-        y_end = min(y + patch_size, h)
-        x_end = min(x + patch_size, w)
-
-        overlay[y:y_end, x:x_end] = (
-            0.6 * overlay[y:y_end, x:x_end] +
-            0.4 * np.array(color)
-        )
-
-    return overlay.astype(np.uint8)
-
-
-# 🌐 API
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    if model is None:
-        return jsonify({"error": "Model not loaded"}), 500
+    try:
+        if model is None:
+            return jsonify({"error": "Model not loaded"}), 500
 
-    if 'image' not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
+        if 'image' not in request.files:
+            return jsonify({"error": "No image uploaded"}), 400
 
-    file = request.files['image']
+        file = request.files['image']
 
-    if file.filename == '':
-        return jsonify({"error": "Empty file"}), 400
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    file_bytes = np.frombuffer(file.read(), np.uint8)
-    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Invalid image"}), 400
 
-    if img is None:
-        return jsonify({"error": "Invalid image file"}), 400
+        stats = predict_image(img)
 
-    stats = predict_image(img)
-    segmented_img = generate_segmentation(img)
+        _, buffer = cv2.imencode('.jpg', img)
+        encoded = base64.b64encode(buffer).decode('utf-8')
 
-    _, buffer = cv2.imencode('.jpg', segmented_img)
-    encoded_image = base64.b64encode(buffer).decode('utf-8')
+        return jsonify({
+            "image": encoded,
+            "stats": stats
+        })
 
-    return jsonify({
-        "image": encoded_image,
-        "stats": stats
-    })
+    except Exception as e:
+        print("❌ ERROR:", e)
+        return jsonify({"error": str(e)}), 500
 
 
-# 🔥 Render-compatible run
+# 🔥 Render fix
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
