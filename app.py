@@ -10,11 +10,11 @@ from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 app = Flask(__name__)
 CORS(app)
 
-# Load model
+# 🔥 Load model
 MODEL_PATH = "model.keras"
 
 if not os.path.exists(MODEL_PATH):
-    print("❌ model not found")
+    print("❌ Model not found")
     model = None
 else:
     print("✅ Loading model...")
@@ -22,7 +22,7 @@ else:
     print("✅ Model loaded")
 
 
-# 🧠 Prediction (batch + weighted)
+# 🧠 Prediction
 def predict_image(img):
     h, w, _ = img.shape
 
@@ -128,7 +128,6 @@ def analyze():
     if model is None:
         return jsonify({"error": "Model not loaded"}), 500
 
-    # 🔥 Validate file
     if 'image' not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
 
@@ -143,7 +142,6 @@ def analyze():
     if img is None:
         return jsonify({"error": "Invalid image file"}), 400
 
-    # Process
     stats = predict_image(img)
     segmented_img = generate_segmentation(img)
 
@@ -156,5 +154,7 @@ def analyze():
     })
 
 
+# 🔥 RENDER FIX (IMPORTANT)
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
